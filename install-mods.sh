@@ -325,8 +325,9 @@ if [[ "$VERIFY" == "true" ]]; then
             snippet=$(python3 -c "
 import sys, re
 c = open('$userdata_dir', errors='ignore').read()
-m = re.search(r'\"2909400\".*?\"LaunchOptions\"\s*\"([^\"]*?)\"', c, re.DOTALL)
-if m: print(m.group(1))
+# Match standalone '2909400' block, capture LaunchOptions handling escaped quotes
+m = re.search(r'\t+\"2909400\"\n\t+\{.*?\"LaunchOptions\"\s*\"((?:[^\"\\\\]|\\\\.)*)\"', c, re.DOTALL)
+if m: print(m.group(1).replace('\\\\\"', '\"'))
 " 2>/dev/null)
             [[ -n "$snippet" ]] && LAUNCH_OPTS_FOUND="$snippet" && break
         done

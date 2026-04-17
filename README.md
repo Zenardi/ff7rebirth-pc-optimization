@@ -87,7 +87,8 @@ Then paste the printed Launch Options into Steam → right-click game → **Prop
 
 ## Before you start
 
-> [!WARNING] `FFVII XeSS Mod v1.3.1-15-1-3-1-1742123804.zip`  File too large to be tracked by Git (need to use Git LFS). Download directly from NexusMods page and put under FFVII DLSS4-FSR4 (zipped) so installation script works.
+> [!WARNING] 
+> `FFVII XeSS Mod v1.3.1-15-1-3-1-1742123804.zip`  File too large to be tracked by Git (need to use Git LFS). Download directly from NexusMods page and put under FFVII DLSS4-FSR4 (zipped) so installation script works.
 
 **Launch the game at least once and close it.** This creates the config folder you will need in Step 2.
 
