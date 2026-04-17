@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# FF7 Rebirth — Mod Installer / Uninstaller for Linux
+# FF7 Rebirth — Mod Installer / Uninstaller / Verifier for Linux
 # Manages: FFVIIHook, Ultimate Engine Tweaks, OptiScaler (DLSS4/FSR4)
 set -euo pipefail
 
@@ -14,13 +14,14 @@ info()    { echo -e "${CYAN}[INFO]${NC}  $*"; }
 success() { echo -e "${GREEN}[ OK ]${NC}  $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 skip()    { echo -e "${YELLOW}[SKIP]${NC}  $*"; }
+fail()    { echo -e "${RED}[FAIL]${NC}  $*"; VERIFY_FAILED=true; }
 die()     { echo -e "${RED}[ERR ]${NC}  $*" >&2; exit 1; }
 step()    { echo -e "\n${BOLD}${CYAN}── $* ──${NC}"; }
 
 remove_file() {
     local f="$1"
     if [[ -f "$f" ]]; then
-        chmod 644 "$f" 2>/dev/null || true   # strip read-only if set
+        chmod 644 "$f" 2>/dev/null || true
         rm -f "$f"
         success "Removed $f"
     else
@@ -33,13 +34,15 @@ GPU="nvidia"           # nvidia | amd
 INSTALL_OPTISCALER=true
 USE_VRR=true
 UNINSTALL=false
+VERIFY=false
+VERIFY_FAILED=false
 
 # ── Usage ─────────────────────────────────────────────────────────────────────
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Installs or uninstalls FF7 Rebirth performance mods on Linux.
+Installs, uninstalls, or verifies FF7 Rebirth performance mods on Linux.
 Mods managed: FFVIIHook, Ultimate Engine Tweaks, OptiScaler (DLSS4/FSR4).
 
 Install options:
@@ -48,10 +51,9 @@ Install options:
   --no-vrr             Use the No-VRR Engine.ini variant
                        (default: VRR / G-Sync / FreeSync enabled)
 
-Uninstall options:
+Other options:
   --uninstall          Remove all installed mod files
-
-General:
+  --verify             Check that all mods are correctly installed
   -h, --help           Show this help
 
 Examples:
@@ -61,6 +63,7 @@ Examples:
   $(basename "$0") --gpu amd --no-vrr  # Install: AMD + FSR4, no VRR
   $(basename "$0") --no-optiscaler     # Install: FFVIIHook + Engine tweaks only
   $(basename "$0") --uninstall         # Remove all mod files
+  $(basename "$0") --verify            # Verify all mods are correctly applied
 EOF
 }
 
@@ -76,6 +79,7 @@ while [[ $# -gt 0 ]]; do
         --no-optiscaler) INSTALL_OPTISCALER=false; shift ;;
         --no-vrr)        USE_VRR=false;            shift ;;
         --uninstall)     UNINSTALL=true;           shift ;;
+        --verify)        VERIFY=true;              shift ;;
         -h|--help)       usage; exit 0 ;;
         *) die "Unknown option: $1  (use --help for usage)" ;;
     esac
@@ -87,6 +91,14 @@ if [[ "$UNINSTALL" == "true" ]]; then
     echo -e "${BOLD}${RED}╔══════════════════════════════════════════════╗${NC}"
     echo -e "${BOLD}${RED}║   FF7 Rebirth — Mod Uninstaller (Linux)      ║${NC}"
     echo -e "${BOLD}${RED}╚══════════════════════════════════════════════╝${NC}"
+elif [[ "$VERIFY" == "true" ]]; then
+    echo -e "${BOLD}${YELLOW}╔══════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}${YELLOW}║   FF7 Rebirth — Mod Verifier (Linux)         ║${NC}"
+    echo -e "${BOLD}${YELLOW}╚══════════════════════════════════════════════╝${NC}"
+    echo
+    info "GPU profile : $GPU"
+    info "OptiScaler  : $INSTALL_OPTISCALER"
+    info "VRR mode    : $USE_VRR"
 else
     echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════╗${NC}"
     echo -e "${BOLD}${CYAN}║   FF7 Rebirth — Mod Installer (Linux)        ║${NC}"
@@ -161,13 +173,241 @@ for lib in "${STEAM_LIBRARIES[@]}"; do
     fi
 done
 
-if [[ -z "$CONFIG_DIR" ]]; then
+if [[ -z "$CONFIG_DIR" && "$UNINSTALL" != "true" ]]; then
     warn "Engine.ini config directory not found."
     warn "Have you launched the game at least once?"
     warn "Expected path (after first launch):"
     warn "  <SteamLibrary>/steamapps/compatdata/$GAME_APP_ID/pfx/drive_c/users/steamuser/Documents/My Games/$GAME_NAME/Saved/Config/WindowsNoEditor"
     echo
     read -rp "  Enter config dir path manually, or press Enter to skip Engine.ini: " CONFIG_DIR
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# VERIFY
+# ══════════════════════════════════════════════════════════════════════════════
+if [[ "$VERIFY" == "true" ]]; then
+
+    # ── Check 1: FFVIIHook ────────────────────────────────────────────────────
+    step "Check 1 — FFVIIHook"
+
+    HOOK_FILE="$BINARIES_DIR/xinput1_3.dll"
+    if [[ -f "$HOOK_FILE" ]]; then
+        success "xinput1_3.dll present in $BINARIES_DIR/"
+    else
+        fail "xinput1_3.dll NOT found in $BINARIES_DIR/"
+        warn "  → Fix: run  ./install-mods.sh  (or check Step 1 in README)"
+        warn "  → Without FFVIIHook, Engine.ini CVars are ignored and stutters persist"
+        # Check for alternate DLL names the user may have used
+        for alt in dxgi.dll winmm.dll d3d9.dll d3d11.dll; do
+            if [[ -f "$BINARIES_DIR/$alt" ]]; then
+                info "  Found $alt — if this is FFVIIHook renamed, that is OK"
+                info "  Make sure your Steam Launch Options use WINEDLLOVERRIDES=\"${alt%.*}=n,b;...\""
+            fi
+        done
+    fi
+
+    # ── Check 2: Engine.ini ───────────────────────────────────────────────────
+    step "Check 2 — Ultimate Engine Tweaks (Engine.ini)"
+
+    INI_FILE="${CONFIG_DIR:+$CONFIG_DIR/Engine.ini}"
+
+    if [[ -z "$CONFIG_DIR" || ! -d "$CONFIG_DIR" ]]; then
+        fail "Config directory not found — Engine.ini cannot be checked"
+        warn "  → Launch the game once to create it, then re-run --verify"
+    elif [[ ! -f "$CONFIG_DIR/Engine.ini" ]]; then
+        fail "Engine.ini NOT found in $CONFIG_DIR/"
+        warn "  → Fix: run  ./install-mods.sh  to copy the optimised Engine.ini"
+    else
+        success "Engine.ini present in $CONFIG_DIR/"
+
+        # Check read-only
+        if [[ ! -w "$CONFIG_DIR/Engine.ini" ]]; then
+            success "Engine.ini is read-only (protected from game overwrite)"
+        else
+            fail "Engine.ini is NOT read-only — the game may overwrite it on launch"
+            warn "  → Fix: chmod 444 \"$CONFIG_DIR/Engine.ini\""
+        fi
+
+        # Check it is the Ultimate Tweaks file (not the vanilla game file)
+        if grep -q "Ultimate Engine Tweaks\|P40L0\|techoptimized" "$CONFIG_DIR/Engine.ini" 2>/dev/null; then
+            success "Engine.ini signature matches Ultimate Engine Tweaks"
+        else
+            fail "Engine.ini does not look like the Ultimate Engine Tweaks file"
+            warn "  → The file may be vanilla or from a different mod"
+            warn "  → Fix: run  ./install-mods.sh  to replace it"
+        fi
+
+        # Check ConsoleVariables section (required for CVars to work with FFVIIHook)
+        if grep -q "\[ConsoleVariables\]" "$CONFIG_DIR/Engine.ini" 2>/dev/null; then
+            success "[ConsoleVariables] section present"
+        else
+            fail "[ConsoleVariables] section missing from Engine.ini"
+            warn "  → FFVIIHook reads from this section; missing it means no CVar overrides"
+        fi
+
+        # VRR-specific check
+        if grep -q "r\.VSync=0" "$CONFIG_DIR/Engine.ini" 2>/dev/null; then
+            info "VRR variant detected (r.VSync=0 found)"
+        else
+            info "No-VRR variant detected"
+        fi
+    fi
+
+    # ── Check 3: OptiScaler ───────────────────────────────────────────────────
+    step "Check 3 — OptiScaler (DLSS4 / FSR4)"
+
+    if [[ "$GPU" == "nvidia" ]]; then
+        OPTISCALER_DLL="$BINARIES_DIR/version.dll"
+        OPTISCALER_LABEL="version.dll (DLSS4/NVIDIA)"
+    else
+        OPTISCALER_DLL="$BINARIES_DIR/dxgi.dll"
+        OPTISCALER_LABEL="dxgi.dll (FSR4/AMD)"
+    fi
+    OPTISCALER_COMMON="$BINARIES_DIR/amd_fidelityfx_dx12.dll"
+    OPTISCALER_INI="$BINARIES_DIR/OptiScaler.ini"
+
+    if [[ -f "$OPTISCALER_DLL" ]]; then
+        success "$OPTISCALER_LABEL present"
+    else
+        fail "$OPTISCALER_LABEL NOT found"
+        warn "  → Fix: run  ./install-mods.sh --gpu $GPU"
+        warn "  → Without this, the DLSS/FSR upscaler won't load"
+    fi
+
+    if [[ -f "$OPTISCALER_COMMON" ]]; then
+        success "amd_fidelityfx_dx12.dll present"
+    else
+        fail "amd_fidelityfx_dx12.dll NOT found"
+        warn "  → Fix: run  ./install-mods.sh --gpu $GPU"
+    fi
+
+    if [[ -f "$OPTISCALER_INI" ]]; then
+        success "OptiScaler.ini present"
+        # Check overlays disabled (recommended)
+        if grep -q "DisableOverlays.*true\|DisableOverlays.*1" "$OPTISCALER_INI" 2>/dev/null; then
+            info "Steam/Epic overlay is disabled in OptiScaler.ini (recommended)"
+        fi
+    else
+        fail "OptiScaler.ini NOT found"
+        warn "  → Fix: run  ./install-mods.sh --gpu $GPU"
+    fi
+
+    # ── Check 4: Proton / Wine compat data ───────────────────────────────────
+    step "Check 4 — Proton compatibility data"
+
+    COMPAT_DIR=""
+    for lib in "${STEAM_LIBRARIES[@]}"; do
+        candidate="$lib/steamapps/compatdata/$GAME_APP_ID"
+        if [[ -d "$candidate" ]]; then
+            COMPAT_DIR="$candidate"
+            break
+        fi
+    done
+
+    if [[ -n "$COMPAT_DIR" ]]; then
+        success "Proton compat data found: $COMPAT_DIR"
+    else
+        fail "Proton compat data not found for app ID $GAME_APP_ID"
+        warn "  → The game has not been run with Proton yet"
+        warn "  → Launch the game once, let it reach the menu, then re-verify"
+    fi
+
+    # ── Check 5: PROTON_ENABLE_NVAPI (NVIDIA only) ────────────────────────────
+    if [[ "$GPU" == "nvidia" ]]; then
+        step "Check 5 — PROTON_ENABLE_NVAPI (NVIDIA / DLSS)"
+
+        # Try to read Steam localconfig.vdf for the stored launch options
+        LAUNCH_OPTS_FOUND=""
+        for userdata_dir in "$STEAM_ROOT/userdata"/*/config/localconfig.vdf \
+                            "$HOME/.local/share/Steam/userdata"/*/config/localconfig.vdf; do
+            [[ -f "$userdata_dir" ]] || continue
+            # Extract everything after the app ID block
+            snippet=$(python3 -c "
+import sys, re
+c = open('$userdata_dir', errors='ignore').read()
+m = re.search(r'\"2909400\".*?\"LaunchOptions\"\s*\"([^\"]*?)\"', c, re.DOTALL)
+if m: print(m.group(1))
+" 2>/dev/null)
+            [[ -n "$snippet" ]] && LAUNCH_OPTS_FOUND="$snippet" && break
+        done
+
+        if [[ -n "$LAUNCH_OPTS_FOUND" ]]; then
+            info "Detected Launch Options: $LAUNCH_OPTS_FOUND"
+            if echo "$LAUNCH_OPTS_FOUND" | grep -q "PROTON_ENABLE_NVAPI=1"; then
+                success "PROTON_ENABLE_NVAPI=1 is set in Steam Launch Options"
+                success "DLSS will communicate with the NVIDIA GPU correctly"
+            else
+                fail "PROTON_ENABLE_NVAPI=1 is MISSING from Steam Launch Options"
+                warn "  → Without this, DLSS silently fails and the game falls back"
+                warn "    to unoptimised rendering — this is the most common stutter cause on Linux"
+                warn "  → Fix: update your Steam Launch Options to:"
+                warn "    WINEDLLOVERRIDES=\"xinput1_3=n,b;version.dll=n,b\" PROTON_ENABLE_NVAPI=1 __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1 gamemoderun %command% -nodirectstorage"
+            fi
+            if echo "$LAUNCH_OPTS_FOUND" | grep -q "gamemoderun"; then
+                success "gamemoderun is present in Steam Launch Options"
+            else
+                fail "gamemoderun is MISSING from Steam Launch Options"
+                warn "  → Install gamemode:  sudo apt install gamemode"
+                warn "  → Then add gamemoderun before %command% in Launch Options"
+            fi
+        else
+            warn "Could not read Steam Launch Options automatically"
+            warn "  → Manually verify your Launch Options contain:"
+            warn "    PROTON_ENABLE_NVAPI=1  and  gamemoderun"
+        fi
+    fi
+
+    # ── Check 6: CPU power governor ───────────────────────────────────────────
+    step "Check 6 — CPU power governor"
+
+    GOVERNOR=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo "unknown")
+    info "Current CPU governor: $GOVERNOR"
+
+    if [[ "$GOVERNOR" == "performance" ]]; then
+        success "CPU governor is set to 'performance'"
+    elif [[ "$GOVERNOR" == "powersave" ]]; then
+        warn "CPU governor is 'powersave' — this throttles CPU frequency and causes stuttering"
+        warn "  GameMode should switch it to 'performance' while the game runs."
+        warn "  If you're still stuttering, set it manually before launching:"
+        warn "    sudo apt install cpufrequtils"
+        warn "    sudo cpufreq-set -g performance"
+        warn "  Or permanently via TLP/auto-cpufreq if on a laptop"
+    else
+        info "CPU governor '$GOVERNOR' — for best performance, 'performance' is recommended"
+    fi
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    echo
+    if [[ "$VERIFY_FAILED" == "true" ]]; then
+        echo -e "${BOLD}${RED}╔══════════════════════════════════════════════╗${NC}"
+        echo -e "${BOLD}${RED}║   Verification FAILED — issues found above   ║${NC}"
+        echo -e "${BOLD}${RED}╚══════════════════════════════════════════════╝${NC}"
+        echo
+        echo -e "${BOLD}Stuttering troubleshooting checklist:${NC}"
+        echo "  1. Re-run installation:   ./install-mods.sh"
+        echo "  2. Confirm Steam Launch Options include all WINEDLLOVERRIDES"
+        echo "     (see Step 4 in README for the exact string)"
+        echo "  3. Set Anti-Aliasing → DLSS in-game Graphics settings"
+        echo "  4. Make sure Engine.ini is read-only after install"
+        echo "  5. After any game update, re-run: ./install-mods.sh"
+        echo
+        exit 1
+    else
+        echo -e "${BOLD}${GREEN}╔══════════════════════════════════════════════╗${NC}"
+        echo -e "${BOLD}${GREEN}║   All checks passed!                         ║${NC}"
+        echo -e "${BOLD}${GREEN}╚══════════════════════════════════════════════╝${NC}"
+        echo
+        echo -e "${BOLD}Mods are correctly installed. If you are still stuttering:${NC}"
+        echo "  • Verify Steam Launch Options match what the installer printed"
+        echo "    (right-click game → Properties → Launch Options)"
+        echo "  • In-game: Graphics → Anti-Aliasing Method must be set to DLSS"
+        echo "  • In-game: Background Model Detail → Ultra (avoids billboarding)"
+        echo "  • After any game patch, re-run: ./install-mods.sh"
+        echo "  • First-run shader compilation causes one-time stutters — play"
+        echo "    for 30–60 min and let the shader cache warm up"
+        echo
+    fi
+    exit 0
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -186,15 +426,14 @@ if [[ "$UNINSTALL" == "true" ]]; then
     fi
 
     step "Removing OptiScaler files"
-    # Remove all possible OptiScaler files regardless of which variant was installed
     OPTISCALER_FILES=(
-        "amd_fidelityfx_dx12.dll"   # both variants
-        "OptiScaler.ini"             # both variants
-        "version.dll"                # DLSS variant
-        "nvngx_dlss_updated.dll"    # DLSS variant
-        "dxgi.dll"                   # FSR / XeSS variant
-        "nvngx.dll"                  # FSR / XeSS variant
-        "libxess.dll"                # XeSS variant
+        "amd_fidelityfx_dx12.dll"
+        "OptiScaler.ini"
+        "version.dll"
+        "nvngx_dlss_updated.dll"
+        "dxgi.dll"
+        "nvngx.dll"
+        "libxess.dll"
     )
     for f in "${OPTISCALER_FILES[@]}"; do
         remove_file "$BINARIES_DIR/$f"
@@ -239,7 +478,6 @@ if [[ -n "$CONFIG_DIR" && -d "$CONFIG_DIR" ]]; then
     fi
     [[ -n "$INI_SRC" ]] || die "Engine.ini ($VRR_LABEL variant) not found in repo."
 
-    # Remove read-only flag if a previous install exists
     [[ -f "$CONFIG_DIR/Engine.ini" ]] && chmod 644 "$CONFIG_DIR/Engine.ini"
 
     cp "$INI_SRC" "$CONFIG_DIR/Engine.ini"
@@ -287,7 +525,7 @@ DLL_OVERRIDES="xinput1_3=n,b"
 [[ -n "$OPTISCALER_DLL_OVERRIDE" ]] && DLL_OVERRIDES="${DLL_OVERRIDES};${OPTISCALER_DLL_OVERRIDE}"
 
 if [[ "$GPU" == "nvidia" ]]; then
-    ENV_VAR="__GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1"
+    ENV_VAR="PROTON_ENABLE_NVAPI=1 __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1"
 else
     ENV_VAR="RADV_PERFTEST=nggc"
 fi

@@ -1,5 +1,7 @@
 # Final Fantasy 7 Rebirth: Ultimate Performance and Stutter Reduction Guide (Linux / Ubuntu)
 
+![image](./image.png)
+
 - [Final Fantasy 7 Rebirth: Ultimate Performance and Stutter Reduction Guide (Linux / Ubuntu)](#final-fantasy-7-rebirth-ultimate-performance-and-stutter-reduction-guide-linux--ubuntu)
   - [Automated Install Script](#automated-install-script)
     - [Quick start (NVIDIA + DLSS4 + VRR)](#quick-start-nvidia--dlss4--vrr)
@@ -12,6 +14,7 @@
   - [Step 3 — Install DLSS4 / FSR4 / XeSS (OptiScaler)](#step-3--install-dlss4--fsr4--xess-optiscaler)
   - [Step 4 — Set Steam Launch Options](#step-4--set-steam-launch-options)
     - [Install GameMode](#install-gamemode)
+    - [Fix CPU governor on laptops](#fix-cpu-governor-on-laptops)
     - [Set the options in Steam](#set-the-options-in-steam)
   - [Step 5 — In-game settings](#step-5--in-game-settings)
   - [Optional — AVX2 Emulation for old CPUs](#optional--avx2-emulation-for-old-cpus)
@@ -40,6 +43,7 @@ Then paste the printed Launch Options into Steam → right-click game → **Prop
 | `--gpu amd` | Use FSR4 (AMD / other GPU) | |
 | `--no-vrr` | Use No-VRR Engine.ini variant | VRR enabled |
 | `--no-optiscaler` | Skip OptiScaler / upscaler install | OptiScaler installed |
+| `--verify` | Check all mods are correctly applied | |
 | `--uninstall` | Remove all mod files | |
 
 ### Examples
@@ -59,6 +63,9 @@ Then paste the printed Launch Options into Steam → right-click game → **Prop
 
 # Only FFVIIHook + Engine tweaks, skip OptiScaler
 ./install-mods.sh --no-optiscaler
+
+# Verify all mods are correctly installed (run this if you experience stuttering)
+./install-mods.sh --verify
 
 # Remove all installed mod files
 ./install-mods.sh --uninstall
@@ -182,6 +189,23 @@ Verify it is working after launching the game:
 gamemoded -s   # should report "gamemode is active"
 ```
 
+### Fix CPU governor on laptops
+
+On laptops the CPU often stays in `powersave` mode, which throttles clock speeds and causes stuttering even when GameMode is running. If you experience stuttering on a laptop, set the governor to `performance` before launching the game:
+
+```bash
+sudo apt install cpufrequtils
+sudo cpufreq-set -g performance
+```
+
+To restore it afterwards:
+```bash
+sudo cpufreq-set -g powersave
+```
+
+> **Tip:** GameMode should do this automatically while the game runs. If `gamemoded -s` confirms GameMode is active but you still stutter, the governor change above is the fix.
+> Run `cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor` to check your current governor.
+
 ### Set the options in Steam
 
 All three mods require Wine DLL overrides to load on Linux. Combine everything into a **single** Launch Options string.
@@ -190,7 +214,7 @@ In Steam: right-click the game → **Properties** → **Launch Options**, and pa
 
 **DLSS4 variant (NVIDIA — recommended):**
 ```
-WINEDLLOVERRIDES="xinput1_3=n,b;version.dll=n,b" __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1 gamemoderun %command% -nodirectstorage
+WINEDLLOVERRIDES="xinput1_3=n,b;version.dll=n,b" PROTON_ENABLE_NVAPI=1 __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1 gamemoderun %command% -nodirectstorage
 ```
 
 **FSR4 variant (AMD or other GPU):**
