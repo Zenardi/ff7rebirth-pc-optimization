@@ -24,7 +24,7 @@
 
 ## Automated Install Script
 
-`install-mods.sh` automates all three mod installations. It auto-detects your Steam library, copies the required files, and prints the exact Steam Launch Options to paste in.
+`install-mods.sh` automates all three mod installations on Linux/Steam Deck. `install-mods.ps1` does the same on Windows, auto-detecting your Steam library, copying the required files, and extracting the selected OptiScaler preset.
 
 ### Quick start (NVIDIA + DLSS4 + VRR)
 
@@ -34,6 +34,20 @@ chmod +x install-mods.sh
 ```
 
 Then paste the printed Launch Options into Steam → right-click game → **Properties → Launch Options**.
+
+### Quick start on Windows (PowerShell)
+
+```powershell
+.\install-mods.ps1
+```
+
+The PowerShell installer uses your Windows config folder automatically:
+
+```text
+%USERPROFILE%\Documents\My Games\FINAL FANTASY VII REBIRTH\Saved\Config\WindowsNoEditor\
+```
+
+Unlike Linux, Windows does **not** need the Steam Launch Options from Step 4.
 
 ### Options
 
@@ -45,6 +59,16 @@ Then paste the printed Launch Options into Steam → right-click game → **Prop
 | `--no-optiscaler` | Skip OptiScaler / upscaler install | OptiScaler installed |
 | `--verify` | Check all mods are correctly applied | |
 | `--uninstall` | Remove all mod files | |
+
+PowerShell equivalents:
+
+| PowerShell switch | Description |
+|---|---|
+| `-Gpu nvidia` / `-Gpu amd` | Select DLSS4 or FSR4 preset |
+| `-NoVrr` | Use the No-VRR Engine.ini variant |
+| `-NoOptiScaler` | Skip OptiScaler |
+| `-Verify` | Check installed files |
+| `-Uninstall` | Remove installed files |
 
 ### Examples
 
@@ -71,17 +95,37 @@ Then paste the printed Launch Options into Steam → right-click game → **Prop
 ./install-mods.sh --uninstall
 ```
 
+```powershell
+# NVIDIA with DLSS4 and VRR (recommended for most users)
+.\install-mods.ps1
+
+# AMD GPU with FSR4 and VRR
+.\install-mods.ps1 -Gpu amd
+
+# NVIDIA, no VRR
+.\install-mods.ps1 -NoVrr
+
+# Only FFVIIHook + Engine tweaks, skip OptiScaler
+.\install-mods.ps1 -NoOptiScaler
+
+# Verify all mods are correctly installed
+.\install-mods.ps1 -Verify
+
+# Remove all installed mod files
+.\install-mods.ps1 -Uninstall
+```
+
 ### What the script does
 
 1. **Auto-detects** your Steam root and parses `libraryfolders.vdf` to find all library paths
-2. **Locates** the FF7 Rebirth `End/Binaries/Win64` folder and Wine prefix config dir
+2. **Locates** the FF7 Rebirth `End/Binaries/Win64` folder and the correct config dir (`Documents\My Games\...` on Windows, Wine prefix on Linux)
 3. **Installs FFVIIHook** — copies `xinput1_3.dll` to the game binaries folder
 4. **Installs Engine.ini** — copies the VRR or No-VRR variant and sets it read-only
 5. **Installs OptiScaler** — extracts the DLSS4 (NVIDIA) or FSR4 (AMD) zip into the game binaries folder
-6. **Prints the Steam Launch Options** to set manually (Steam does not allow scripts to set this)
+6. **Prints the Steam Launch Options** on Linux; Windows does not need them
 
 > [!NOTE]
-> After the script finishes, you must still manually paste the Launch Options into Steam and set **Anti-Aliasing Method → DLSS** in-game (Step 5).
+> After the script finishes, set **Anti-Aliasing Method → DLSS** in-game (Step 5). On Linux, you must still manually paste the printed Launch Options into Steam.
 
 ---
 
