@@ -4,6 +4,9 @@ param(
     [string]$Gpu = 'nvidia',
     [switch]$NoOptiScaler,
     [switch]$NoVrr,
+    [switch]$NoFantasyOptimizer,
+    [switch]$NoEnhancedVisuals,
+    [switch]$EfvFog,
     [switch]$Uninstall,
     [switch]$Verify,
     [string]$GameDir,
@@ -54,20 +57,25 @@ function Show-Usage {
 Usage: .\install-mods.ps1 [OPTIONS]
 
 Installs, uninstalls, or verifies FF7 Rebirth performance mods on Windows.
-Mods managed: FFVIIHook, Ultimate Engine Tweaks, OptiScaler (DLSS4/FSR4).
+Mods managed: FFVIIHook, Ultimate Engine Tweaks, OptiScaler (DLSS4/FSR4),
+              Fantasy Optimizer, Enhanced Fantasy Visuals.
 
 Install options:
-  -Gpu nvidia|amd      Graphics card type            (default: nvidia)
-  -NoOptiScaler        Skip OptiScaler / upscaler installation
-  -NoVrr               Use the No-VRR Engine.ini variant
-                       (default: VRR / G-Sync / FreeSync enabled)
+  -Gpu nvidia|amd         Graphics card type            (default: nvidia)
+  -NoOptiScaler           Skip OptiScaler / upscaler installation
+  -NoVrr                  Use the No-VRR Engine.ini variant
+                          (default: VRR / G-Sync / FreeSync enabled)
+  -NoFantasyOptimizer     Skip Fantasy Optimizer (.pak) installation
+  -NoEnhancedVisuals      Skip Enhanced Fantasy Visuals (.pak) installation
+  -EfvFog                 Use the Fog Enabled variant of Enhanced Fantasy Visuals
+                          (default: standard variant)
 
 Other options:
-  -Uninstall           Remove all installed mod files
-  -Verify              Check that all mods are correctly installed
-  -GameDir <path>      Override auto-detected game directory
-  -ConfigDir <path>    Override auto-detected config directory
-  -Help                Show this help
+  -Uninstall              Remove all installed mod files
+  -Verify                 Check that all mods are correctly installed
+  -GameDir <path>         Override auto-detected game directory
+  -ConfigDir <path>       Override auto-detected config directory
+  -Help                   Show this help
 
 Examples:
   .\install-mods.ps1
@@ -75,6 +83,9 @@ Examples:
   .\install-mods.ps1 -NoVrr
   .\install-mods.ps1 -Gpu amd -NoVrr
   .\install-mods.ps1 -NoOptiScaler
+  .\install-mods.ps1 -NoFantasyOptimizer
+  .\install-mods.ps1 -NoEnhancedVisuals
+  .\install-mods.ps1 -EfvFog
   .\install-mods.ps1 -Verify
   .\install-mods.ps1 -Uninstall
 "@
@@ -189,6 +200,7 @@ function Get-GamePaths {
         GameDir        = $resolvedGameDir
         BinariesDir    = Join-Path $resolvedGameDir 'End\Binaries\Win64'
         ConfigDir      = $resolvedConfigDir
+        PaksModDir     = Join-Path $resolvedGameDir 'End\Content\Paks\~mods'
     }
 }
 
@@ -277,9 +289,12 @@ $modeColor = if ($Uninstall) { 'Red' } elseif ($Verify) { 'Yellow' } else { 'Cya
 Write-Host ''
 Write-Host ('FF7 Rebirth - Mod {0} (Windows)' -f $modeLabel) -ForegroundColor $modeColor
 Write-Host ''
-Write-Info "GPU profile : $Gpu"
-Write-Info "OptiScaler  : $(-not $NoOptiScaler)"
-Write-Info "VRR mode    : $(-not $NoVrr)"
+Write-Info "GPU profile      : $Gpu"
+Write-Info "OptiScaler       : $(-not $NoOptiScaler)"
+Write-Info "VRR mode         : $(-not $NoVrr)"
+Write-Info "Fantasy Optimizer: $(-not $NoFantasyOptimizer)"
+$efvVariant = if ($EfvFog) { 'fog' } else { 'standard' }
+Write-Info "Enhanced Visuals : $(-not $NoEnhancedVisuals) ($efvVariant)"
 
 $paths = Get-GamePaths
 Write-Step "Locating Steam and $GameName"
@@ -376,6 +391,28 @@ if ($Verify) {
         }
     }
 
+    Write-Step 'Check 4 - Fantasy Optimizer'
+    $foPak = Join-Path $paths.PaksModDir 'ZZFrancisLouisFOVer2_P.pak'
+    if (Test-Path $foPak) {
+        Write-Success "Fantasy Optimizer .pak present: $foPak"
+    }
+    else {
+        Write-Fail "Fantasy Optimizer .pak NOT found: $foPak"
+        Write-Warn '  -> Re-run .\install-mods.ps1 to install it (see Step 6 in README).'
+    }
+
+    Write-Step 'Check 5 - Enhanced Fantasy Visuals'
+    $efvPakStd = Join-Path $paths.PaksModDir 'ZFrancisLouis_EFVEpic_P.pak'
+    $efvPakFog = Join-Path $paths.PaksModDir 'ZFrancisLouis_EFVFogEpic_P.pak'
+    if ((Test-Path $efvPakStd) -or (Test-Path $efvPakFog)) {
+        $found = if (Test-Path $efvPakStd) { $efvPakStd } else { $efvPakFog }
+        Write-Success "Enhanced Fantasy Visuals .pak present: $found"
+    }
+    else {
+        Write-Fail "Enhanced Fantasy Visuals .pak NOT found in $($paths.PaksModDir)"
+        Write-Warn '  -> Re-run .\install-mods.ps1 to install it (see Step 7 in README).'
+    }
+
     Write-Host ''
     if ($script:VerifyFailed) {
         Write-Host 'Verification FAILED - issues found above' -ForegroundColor Red
@@ -411,6 +448,13 @@ if ($Uninstall) {
     )) {
         Remove-InstalledFile -Path (Join-Path $paths.BinariesDir $fileName)
     }
+
+    Write-Step 'Removing Fantasy Optimizer'
+    Remove-InstalledFile -Path (Join-Path $paths.PaksModDir 'ZZFrancisLouisFOVer2_P.pak')
+
+    Write-Step 'Removing Enhanced Fantasy Visuals'
+    Remove-InstalledFile -Path (Join-Path $paths.PaksModDir 'ZFrancisLouis_EFVEpic_P.pak')
+    Remove-InstalledFile -Path (Join-Path $paths.PaksModDir 'ZFrancisLouis_EFVFogEpic_P.pak')
 
     Write-Host ''
     Write-Host 'Uninstall complete.' -ForegroundColor Green
@@ -479,6 +523,54 @@ if (-not $NoOptiScaler) {
 else {
     Write-Step 'Step 3 - OptiScaler'
     Write-Skip 'Skipped because -NoOptiScaler was selected.'
+}
+
+if (-not $NoFantasyOptimizer) {
+    Write-Step 'Step 4 - Fantasy Optimizer'
+    $foDir = Get-FirstMatch -BasePath $ScriptDir -Filter 'Final Optimizer*' -Directory
+    if (-not $foDir) {
+        Stop-Script "'Final Optimizer (Ver2)-*' folder not found."
+    }
+    $foPak = Get-FirstMatch -BasePath $foDir.FullName -Filter '*.pak'
+    if (-not $foPak) {
+        Stop-Script "Fantasy Optimizer .pak not found inside '$($foDir.FullName)'."
+    }
+    New-Item -ItemType Directory -Path $paths.PaksModDir -Force | Out-Null
+    Copy-Item -LiteralPath $foPak.FullName -Destination (Join-Path $paths.PaksModDir $foPak.Name) -Force
+    Write-Success "Copied $($foPak.Name) -> $($paths.PaksModDir)"
+}
+else {
+    Write-Step 'Step 4 - Fantasy Optimizer'
+    Write-Skip 'Skipped because -NoFantasyOptimizer was selected.'
+}
+
+if (-not $NoEnhancedVisuals) {
+    $efvLabel = if ($EfvFog) { 'Enhanced Fantasy Visuals (Fog Enabled)' } else { 'Enhanced Fantasy Visuals (Standard)' }
+    Write-Step "Step 5 - $efvLabel"
+    $efvBaseDir = Join-Path $ScriptDir 'Enhanced-Fantasy-Visuals'
+    if ($EfvFog) {
+        $efvPak = Get-ChildItem -Path $efvBaseDir -Filter '*Fog*.pak' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $efvPak) {
+            Stop-Script "Enhanced Fantasy Visuals (Fog) .pak not found inside 'Enhanced-Fantasy-Visuals\'."
+        }
+    }
+    else {
+        $efvPak = Get-ChildItem -Path $efvBaseDir -Filter '*.pak' -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch 'Fog' } | Select-Object -First 1
+        if (-not $efvPak) {
+            Stop-Script "Enhanced Fantasy Visuals .pak not found inside 'Enhanced-Fantasy-Visuals\'."
+        }
+    }
+    New-Item -ItemType Directory -Path $paths.PaksModDir -Force | Out-Null
+    # Remove the other variant to avoid conflicts
+    Remove-Item -Path (Join-Path $paths.PaksModDir 'ZFrancisLouis_EFVEpic_P.pak') -ErrorAction SilentlyContinue
+    Remove-Item -Path (Join-Path $paths.PaksModDir 'ZFrancisLouis_EFVFogEpic_P.pak') -ErrorAction SilentlyContinue
+    Copy-Item -LiteralPath $efvPak.FullName -Destination (Join-Path $paths.PaksModDir $efvPak.Name) -Force
+    Write-Success "Copied $($efvPak.Name) -> $($paths.PaksModDir)"
+}
+else {
+    Write-Step 'Step 5 - Enhanced Fantasy Visuals'
+    Write-Skip 'Skipped because -NoEnhancedVisuals was selected.'
 }
 
 Write-Host ''

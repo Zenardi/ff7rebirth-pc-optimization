@@ -4,7 +4,8 @@
 
 - [Final Fantasy 7 Rebirth: Ultimate Performance and Stutter Reduction Guide (Linux / Ubuntu)](#final-fantasy-7-rebirth-ultimate-performance-and-stutter-reduction-guide-linux--ubuntu)
   - [Automated Install Script](#automated-install-script)
-    - [Quick start (NVIDIA + DLSS4 + VRR)](#quick-start-nvidia--dlss4--vrr)
+    - [Quick start — Linux / Steam Deck](#quick-start--linux--steam-deck)
+    - [Quick start — Windows (PowerShell)](#quick-start--windows-powershell)
     - [Options](#options)
     - [Examples](#examples)
     - [What the script does](#what-the-script-does)
@@ -28,7 +29,7 @@
 
 `install-mods.sh` automates all three mod installations on Linux/Steam Deck. `install-mods.ps1` does the same on Windows, auto-detecting your Steam library, copying the required files, and extracting the selected OptiScaler preset.
 
-### Quick start (NVIDIA + DLSS4 + VRR)
+### Quick start — Linux / Steam Deck
 
 ```bash
 chmod +x install-mods.sh
@@ -37,7 +38,7 @@ chmod +x install-mods.sh
 
 Then paste the printed Launch Options into Steam → right-click game → **Properties → Launch Options**.
 
-### Quick start on Windows (PowerShell)
+### Quick start — Windows (PowerShell)
 
 ```powershell
 .\install-mods.ps1
@@ -72,6 +73,9 @@ PowerShell equivalents:
 | `-Gpu nvidia` / `-Gpu amd` | Select DLSS4 or FSR4 preset |
 | `-NoVrr` | Use the No-VRR Engine.ini variant |
 | `-NoOptiScaler` | Skip OptiScaler |
+| `-NoFantasyOptimizer` | Skip Fantasy Optimizer (.pak) |
+| `-NoEnhancedVisuals` | Skip Enhanced Fantasy Visuals (.pak) |
+| `-EfvFog` | Use the Fog Enabled variant of Enhanced Fantasy Visuals |
 | `-Verify` | Check installed files |
 | `-Uninstall` | Remove installed files |
 
@@ -120,6 +124,13 @@ PowerShell equivalents:
 # Only FFVIIHook + Engine tweaks, skip OptiScaler
 .\install-mods.ps1 -NoOptiScaler
 
+# Skip Fantasy Optimizer or Enhanced Fantasy Visuals
+.\install-mods.ps1 -NoFantasyOptimizer
+.\install-mods.ps1 -NoEnhancedVisuals
+
+# Use Fog Enabled variant of Enhanced Fantasy Visuals
+.\install-mods.ps1 -EfvFog
+
 # Verify all mods are correctly installed
 .\install-mods.ps1 -Verify
 
@@ -136,8 +147,7 @@ PowerShell equivalents:
 5. **Installs OptiScaler** — extracts the DLSS4 (NVIDIA) or FSR4 (AMD) zip into the game binaries folder
 6. **Installs Fantasy Optimizer** — copies the `.pak` file into `End/Content/Paks/~mods/`
 7. **Installs Enhanced Fantasy Visuals** — copies the standard or fog-enabled `.pak` into `End/Content/Paks/~mods/`
-8. **Prints the Steam Launch Options** to set manually (Steam does not allow scripts to set this)
-6. **Prints the Steam Launch Options** on Linux; Windows does not need them
+8. **Prints the Steam Launch Options** on Linux (Windows does not need them)
 
 > [!NOTE]
 > After the script finishes, set **Anti-Aliasing Method → DLSS** in-game (Step 5). On Linux, you must still manually paste the printed Launch Options into Steam.
