@@ -303,6 +303,13 @@ if [[ "$VERIFY" == "true" ]]; then
         warn "  → Fix: run  ./install-mods.sh --gpu $GPU"
     fi
 
+    # fakenvapi is new in 0.9 — check it
+    if [[ -f "$BINARIES_DIR/fakenvapi.dll" ]]; then
+        success "fakenvapi.dll present (OptiScaler 0.9+)"
+    else
+        warn "fakenvapi.dll not found — you may be running an older OptiScaler; re-run ./install-mods.sh to upgrade"
+    fi
+
     if [[ -f "$OPTISCALER_INI" ]]; then
         success "OptiScaler.ini present"
         # Check overlays disabled (recommended)
@@ -476,16 +483,27 @@ if [[ "$UNINSTALL" == "true" ]]; then
     step "Removing OptiScaler files"
     OPTISCALER_FILES=(
         "amd_fidelityfx_dx12.dll"
+        "amd_fidelityfx_upscaler_dx12.dll"
+        "amd_fidelityfx_framegeneration_dx12.dll"
+        "amd_fidelityfx_vk.dll"
         "OptiScaler.ini"
         "version.dll"
-        "nvngx_dlss_updated.dll"
         "dxgi.dll"
+        "nvngx_dlss_updated.dll"
         "nvngx.dll"
+        "fakenvapi.dll"
+        "fakenvapi.ini"
+        "dlssg_to_fsr3_amd_is_better.dll"
+        "libxell.dll"
         "libxess.dll"
+        "libxess_fg.dll"
+        "libxess_dx11.dll"
+        "remove_optiscaler.sh"
     )
     for f in "${OPTISCALER_FILES[@]}"; do
         remove_file "$BINARIES_DIR/$f"
     done
+    rm -rf "$BINARIES_DIR/D3D12_Optiscaler" 2>/dev/null && info "  Removed D3D12_Optiscaler/"
 
     step "Removing Fantasy Optimizer"
     remove_file "$PAKS_MOD_DIR/ZZFrancisLouisFOVer2_P.pak"
@@ -551,24 +569,37 @@ if [[ "$INSTALL_OPTISCALER" == "true" ]]; then
 
     OPTISCALER_DIR="$SCRIPT_DIR/FFVII DLSS4-FSR4"
 
-    if [[ "$GPU" == "nvidia" ]]; then
-        DLSS_ZIP=$(find "$OPTISCALER_DIR" -maxdepth 1 -name "*DLSS*Mod*.zip" | head -1)
-        [[ -n "$DLSS_ZIP" ]] \
-            || die "DLSS mod zip not found in 'FFVII DLSS4-FSR4/'. Check the repo is complete."
+    OPTI_SRC=$(find "$OPTISCALER_DIR" -maxdepth 1 -type d -name "OptiScaler-v*" | sort -V | tail -1)
+    [[ -n "$OPTI_SRC" ]] \
+        || die "OptiScaler folder not found in 'FFVII DLSS4-FSR4/'. Check the repo is complete."
 
-        info "Extracting: $(basename "$DLSS_ZIP")"
-        unzip -o "$DLSS_ZIP" -d "$BINARIES_DIR" -x "Readme.txt" > /dev/null
-        success "Extracted DLSS4 files  →  $BINARIES_DIR/"
+    info "Copying OptiScaler files from: $(basename "$OPTI_SRC")"
+
+    if [[ "$GPU" == "nvidia" ]]; then
+        # Remove old hook DLL names from previous installs
+        rm -f "$BINARIES_DIR/dxgi.dll" "$BINARIES_DIR/nvngx_dlss_updated.dll" "$BINARIES_DIR/nvngx.dll"
+        # Copy all files, then rename OptiScaler.dll → version.dll (NVIDIA hook)
+        cp -r "$OPTI_SRC/." "$BINARIES_DIR/"
+        mv "$BINARIES_DIR/OptiScaler.dll" "$BINARIES_DIR/version.dll"
+        success "Installed OptiScaler (DLSS4/NVIDIA)  →  $BINARIES_DIR/"
         OPTISCALER_DLL_OVERRIDE="version.dll=n,b"
 
     else  # amd
-        FSR_ZIP=$(find "$OPTISCALER_DIR" -maxdepth 1 -name "*FSR*Mod*.zip" | head -1)
-        [[ -n "$FSR_ZIP" ]] \
-            || die "FSR mod zip not found in 'FFVII DLSS4-FSR4/'. Check the repo is complete."
-
-        info "Extracting: $(basename "$FSR_ZIP")"
-        unzip -o "$FSR_ZIP" -d "$BINARIES_DIR" -x "Readme.txt" > /dev/null
-        success "Extracted FSR4 files  →  $BINARIES_DIR/"
+        # AMD requires the large FSR DLLs — check they are present
+        MISSING_FSR=false
+        for f in amd_fidelityfx_upscaler_dx12.dll amd_fidelityfx_framegeneration_dx12.dll; do
+            [[ -f "$OPTI_SRC/$f" ]] || { warn "Missing AMD file: $f"; MISSING_FSR=true; }
+        done
+        if [[ "$MISSING_FSR" == "true" ]]; then
+            die "AMD FSR DLLs are not bundled in the repo (too large for git).
+  Download the full OptiScaler release and place the missing DLLs inside:
+  $OPTI_SRC/
+  Release URL: https://github.com/optiscaler/OptiScaler/releases/latest"
+        fi
+        rm -f "$BINARIES_DIR/version.dll" "$BINARIES_DIR/nvngx_dlss_updated.dll" "$BINARIES_DIR/nvngx.dll"
+        cp -r "$OPTI_SRC/." "$BINARIES_DIR/"
+        mv "$BINARIES_DIR/OptiScaler.dll" "$BINARIES_DIR/dxgi.dll"
+        success "Installed OptiScaler (FSR4/AMD)  →  $BINARIES_DIR/"
         OPTISCALER_DLL_OVERRIDE="dxgi.dll=n,b"
     fi
 fi

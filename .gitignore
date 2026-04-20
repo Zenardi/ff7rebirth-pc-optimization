@@ -1,2 +1,13 @@
-# File too large to be tracked by Git (need to use Git LFS)
-FVII XeSS Mod v1.3.1-15-1-3-1-1742123804.zip
+# Files too large to be tracked by Git
+# OptiScaler: old NexusMods preset zips (replaced by OptiScaler-v0.9.0/)
+FFVII\ DLSS4-FSR4/FFVII\ DLSS\ Mod\ v1.3.1-15-1-3-1-1742123747.zip
+FFVII\ DLSS4-FSR4/FFVII\ FSR\ Mod\ v1.3.1-15-1-3-1-1742123703.zip
+FVII\ XeSS\ Mod\ v1.3.1-15-1-3-1-1742123804.zip
+
+# OptiScaler: large AMD/XeSS DLLs (not needed for NVIDIA/DLSS)
+# AMD users: download full release from https://github.com/optiscaler/OptiScaler/releases/latest
+FFVII\ DLSS4-FSR4/OptiScaler-v0.9.0/amd_fidelityfx_framegeneration_dx12.dll
+FFVII\ DLSS4-FSR4/OptiScaler-v0.9.0/amd_fidelityfx_upscaler_dx12.dll
+FFVII\ DLSS4-FSR4/OptiScaler-v0.9.0/amd_fidelityfx_vk.dll
+FFVII\ DLSS4-FSR4/OptiScaler-v0.9.0/libxess.dll
+FFVII\ DLSS4-FSR4/OptiScaler-v0.9.0/libxess_fg.dll

@@ -439,15 +439,27 @@ if ($Uninstall) {
     Write-Step 'Removing OptiScaler files'
     foreach ($fileName in @(
         'amd_fidelityfx_dx12.dll',
+        'amd_fidelityfx_upscaler_dx12.dll',
+        'amd_fidelityfx_framegeneration_dx12.dll',
+        'amd_fidelityfx_vk.dll',
         'OptiScaler.ini',
         'version.dll',
-        'nvngx_dlss_updated.dll',
         'dxgi.dll',
+        'nvngx_dlss_updated.dll',
         'nvngx.dll',
-        'libxess.dll'
+        'fakenvapi.dll',
+        'fakenvapi.ini',
+        'dlssg_to_fsr3_amd_is_better.dll',
+        'libxell.dll',
+        'libxess.dll',
+        'libxess_fg.dll',
+        'libxess_dx11.dll',
+        'remove_optiscaler.sh'
     )) {
         Remove-InstalledFile -Path (Join-Path $paths.BinariesDir $fileName)
     }
+    $d3d12Dir = Join-Path $paths.BinariesDir 'D3D12_Optiscaler'
+    if (Test-Path $d3d12Dir) { Remove-Item $d3d12Dir -Recurse -Force; Write-Info "  Removed D3D12_Optiscaler\" }
 
     Write-Step 'Removing Fantasy Optimizer'
     Remove-InstalledFile -Path (Join-Path $paths.PaksModDir 'ZZFrancisLouisFOVer2_P.pak')
@@ -510,15 +522,48 @@ if (-not $NoOptiScaler) {
         Stop-Script "Missing '$optiScalerDir'."
     }
 
-    $zipFilter = if ($Gpu -eq 'nvidia') { '*DLSS*Mod*.zip' } else { '*FSR*Mod*.zip' }
-    $zipFile = Get-FirstMatch -BasePath $optiScalerDir -Filter $zipFilter
-    if (-not $zipFile) {
-        Stop-Script "$Gpu mod zip not found in 'FFVII DLSS4-FSR4'. Check the repo is complete."
+    $optiSrcDir = Get-ChildItem -LiteralPath $optiScalerDir -Filter 'OptiScaler-v*' -Directory |
+                  Sort-Object Name | Select-Object -Last 1
+    if (-not $optiSrcDir) {
+        Stop-Script "OptiScaler folder not found in 'FFVII DLSS4-FSR4\'. Check the repo is complete."
     }
+    Write-Info "Installing from: $($optiSrcDir.Name)"
 
-    Write-Info "Extracting: $($zipFile.Name)"
-    Expand-ZipFiltered -ZipPath $zipFile.FullName -Destination $paths.BinariesDir -ExcludeLeafNames @('Readme.txt')
-    Write-Success "Extracted $($(if ($Gpu -eq 'nvidia') { 'DLSS4' } else { 'FSR4' })) files -> $($paths.BinariesDir)"
+    if ($Gpu -eq 'nvidia') {
+        # Remove old hook DLL names from previous installs
+        foreach ($old in @('dxgi.dll','nvngx_dlss_updated.dll','nvngx.dll')) {
+            $p = Join-Path $paths.BinariesDir $old
+            if (Test-Path $p) { Remove-Item $p -Force }
+        }
+        # Copy all files, rename OptiScaler.dll -> version.dll (NVIDIA hook)
+        Copy-Item -Path "$($optiSrcDir.FullName)\*" -Destination $paths.BinariesDir -Recurse -Force
+        $optiDll = Join-Path $paths.BinariesDir 'OptiScaler.dll'
+        if (Test-Path $optiDll) {
+            Rename-Item $optiDll 'version.dll' -Force
+        }
+        Write-Success "Installed OptiScaler (DLSS4/NVIDIA) -> $($paths.BinariesDir)"
+    }
+    else {
+        # AMD: check large FSR DLLs are present
+        $missingFsr = @('amd_fidelityfx_upscaler_dx12.dll','amd_fidelityfx_framegeneration_dx12.dll') |
+                      Where-Object { -not (Test-Path (Join-Path $optiSrcDir.FullName $_)) }
+        if ($missingFsr) {
+            Stop-Script ("AMD FSR DLLs are not bundled in the repo (too large for git).`n" +
+                "Missing: $($missingFsr -join ', ')`n" +
+                "Download the full release from: https://github.com/optiscaler/OptiScaler/releases/latest`n" +
+                "and place the missing DLLs inside: $($optiSrcDir.FullName)")
+        }
+        foreach ($old in @('version.dll','nvngx_dlss_updated.dll','nvngx.dll')) {
+            $p = Join-Path $paths.BinariesDir $old
+            if (Test-Path $p) { Remove-Item $p -Force }
+        }
+        Copy-Item -Path "$($optiSrcDir.FullName)\*" -Destination $paths.BinariesDir -Recurse -Force
+        $optiDll = Join-Path $paths.BinariesDir 'OptiScaler.dll'
+        if (Test-Path $optiDll) {
+            Rename-Item $optiDll 'dxgi.dll' -Force
+        }
+        Write-Success "Installed OptiScaler (FSR4/AMD) -> $($paths.BinariesDir)"
+    }
 }
 else {
     Write-Step 'Step 3 - OptiScaler'

@@ -12,9 +12,11 @@
   - [Before you start](#before-you-start)
   - [Step 1 — Install FFVIIHook](#step-1--install-ffviihook)
   - [Step 2 — Install Ultimate Engine Tweaks](#step-2--install-ultimate-engine-tweaks)
+    - [Enabling VRR on Linux (GNOME / Ubuntu)](#enabling-vrr-on-linux-gnome--ubuntu)
   - [Step 3 — Install DLSS4 / FSR4 / XeSS (OptiScaler)](#step-3--install-dlss4--fsr4--xess-optiscaler)
   - [Step 4 — Set Steam Launch Options](#step-4--set-steam-launch-options)
     - [Install GameMode](#install-gamemode)
+      - [Add your user to the gamemode group](#add-your-user-to-the-gamemode-group)
     - [Fix CPU governor on laptops](#fix-cpu-governor-on-laptops)
     - [Set the options in Steam](#set-the-options-in-steam)
   - [Step 5 — In-game settings](#step-5--in-game-settings)
@@ -204,6 +206,45 @@ FFVIIHook patches the game so that `[ConsoleVariables]` settings in `Engine.ini`
 | Yes — enabled in both GPU driver **and** display settings | `FF7Rebirth Ultimate Unreal Engine.ini (VRR)-*/` |
 | No, or unsure | `FF7Rebirth Ultimate Unreal Engine.ini (No VRR)-*/` |
 
+#### Enabling VRR on Linux (GNOME / Ubuntu)
+
+On Linux, VRR must be enabled at the **compositor** level in addition to the GPU driver. On GNOME (Ubuntu 24.04+, mutter 46+) it is an experimental feature that is off by default — even if your panel supports it.
+
+**Check if your panel supports VRR:**
+
+```bash
+# Decode panel model from EDID
+python3 -c "
+import sys
+data = open('/sys/class/drm/card0-eDP-1/edid','rb').read()  # adjust card/connector as needed
+m = int.from_bytes(data[8:10], 'big')
+c = ''.join(chr(((m>>(10-5*i))&0x1F)+64) for i in range(3))
+pid = int.from_bytes(data[10:12], 'little')
+print(f'Panel: {c} 0x{pid:04X}')
+"
+```
+
+Look up the result on [Panelook](https://www.panelook.com) to confirm VRR support. The BOE NE16NZH (2560×1600, 240Hz) used in many 2024–2025 gaming laptops supports VRR at 48–240Hz.
+
+**Enable VRR in GNOME mutter:**
+
+```bash
+# List available experimental features (variable-refresh-rate should appear)
+gsettings range org.gnome.mutter experimental-features
+
+# Enable it
+gsettings set org.gnome.mutter experimental-features "['variable-refresh-rate']"
+
+# Verify
+gsettings get org.gnome.mutter experimental-features
+# expected: ['variable-refresh-rate']
+```
+
+**Log out and log back in** — the compositor only picks up this change after a new session starts. After logging in, VRR will be active on any display (or panel) that advertises support, and the `r.VSync=0` / `r.D3D12.UseAllowTearing=1` lines in the VRR Engine.ini variant will work correctly.
+
+> [!NOTE]
+> If you use KDE Plasma, go to **System Settings → Display & Monitor → select your display → Variable Refresh Rate** and set it to *Always enabled* or *Automatic*.
+
 **Install:**
 
 1. Copy `Engine.ini` from your chosen variant folder into:
@@ -222,25 +263,36 @@ FFVIIHook patches the game so that `[ConsoleVariables]` settings in `Engine.ini`
 
 ## Step 3 — Install DLSS4 / FSR4 / XeSS (OptiScaler)
 
-[NexusMods page](https://www.nexusmods.com/finalfantasy7rebirth/mods/15)
+[GitHub releases](https://github.com/optiscaler/OptiScaler/releases/latest) · [NexusMods page](https://www.nexusmods.com/finalfantasy7rebirth/mods/15)
 
-OptiScaler (by cdozdil) adds DLSS4 (transformer model), FSR 3.1/4.0, and XeSS 2.0 upscalers plus frame generation support.
+OptiScaler (by cdozdil) adds DLSS 4 (transformer model), FSR 4.1, XeSS 3.0 and XeLL frame generation support.
+This repo bundles **OptiScaler v0.9.0** (the current stable release).
 
 **Choose your upscaler:**
 
-| GPU | Recommended preset | DLL used |
+| GPU | Recommended preset | Hook DLL |
 |---|---|---|
-| NVIDIA (RTX) | DLSS variant | `version.dll` |
-| AMD / other | FSR3/XeSS variant | `dxgi.dll` |
+| NVIDIA (RTX) | DLSS4 | `version.dll` |
+| AMD / other | FSR4 | `dxgi.dll` |
+
+> [!NOTE]
+> **AMD / FSR4 users:** The large FSR DLLs (`amd_fidelityfx_upscaler_dx12.dll`, `amd_fidelityfx_framegeneration_dx12.dll`) are not tracked in this repo due to their size (~53 MB combined). Download the full OptiScaler release from the link above and place those two DLLs inside `FFVII DLSS4-FSR4/OptiScaler-v0.9.0/` before running the install script.
 
 **Install:**
 
-1. Copy all files from `FFVII DLSS4-FSR4/` (the upscaler preset you chose) into your game's `End/Binaries/Win64/` folder.
+1. Copy all files from `FFVII DLSS4-FSR4/OptiScaler-v0.9.0/` into your game's `End/Binaries/Win64/` folder.
+2. Rename `OptiScaler.dll` to `version.dll` (NVIDIA) or `dxgi.dll` (AMD).
+
+The install script does both steps automatically.
+
+> [!WARNING]
+> **Upgrading from OptiScaler ≤ 0.7.9?** Manually delete `nvapi64.dll` and `nvngx.dll` from `End/Binaries/Win64/` before installing 0.9. The uninstall script (or `./install-mods.sh --uninstall`) handles this automatically.
 
 **Notes:**
 - Steam/Epic overlay is disabled by default. Re-enable it by setting `DisableOverlays=false` in `OptiScaler.ini`.
 - Adjust **Dynamic Resolution Scaling (minimum)** in Graphics settings to control resolution quality — there is no standard preset selector.
-- Frame generation is partially supported. Enable it in-game with `Insert` → check Frame Generation. (Known issue: causes HUD glitching.)
+- Frame generation (DLSS-FG / FSR-FG / XeFG) can be toggled in-game with the `End` key (opens OptiScaler overlay).
+- OptiScaler now bundles **Fakenvapi** (`fakenvapi.dll`) — no separate `nvapi64.dll` is needed.
 
 ---
 
@@ -252,6 +304,20 @@ OptiScaler (by cdozdil) adds DLSS4 (transformer model), FSR 3.1/4.0, and XeSS 2.
 
 ```bash
 sudo apt install gamemode
+```
+
+#### Add your user to the `gamemode` group
+
+GameMode uses polkit to apply privileged optimisations (CPU governor, split-lock mitigation, GPU priority). **Your user must be in the `gamemode` group**, otherwise GameMode launches silently but does nothing — the game still has `gamemoderun` in the launch string, but the optimisations are never applied.
+
+```bash
+sudo usermod -aG gamemode $USER
+```
+
+Then **log out and log back in** so the new group membership takes effect. Verify:
+
+```bash
+groups $USER   # "gamemode" should appear in the output
 ```
 
 Verify it is working after launching the game:
@@ -376,8 +442,8 @@ The game refuses to launch without AVX2. This mod uses Intel SDE to emulate the 
 |---|---|
 | FFVIIHook | `xinput1_3.dll` (or whichever name you used) from `End/Binaries/Win64/` |
 | Ultimate Engine Tweaks | `Engine.ini` from the `WindowsNoEditor/` config folder |
-| OptiScaler (DLSS) | `amd_fidelityfx_dx12.dll`, `version.dll`, `nvngx_dlss_updated.dll`, `OptiScaler.ini` from `End/Binaries/Win64/` |
-| OptiScaler (FSR3/XeSS) | `amd_fidelityfx_dx12.dll`, `dxgi.dll`, `nvngx.dll`, `OptiScaler.ini` from `End/Binaries/Win64/` |
+| OptiScaler (DLSS4/NVIDIA) | `version.dll`, `amd_fidelityfx_dx12.dll`, `fakenvapi.dll`, `fakenvapi.ini`, `dlssg_to_fsr3_amd_is_better.dll`, `libxell.dll`, `OptiScaler.ini`, `D3D12_Optiscaler/` from `End/Binaries/Win64/` |
+| OptiScaler (FSR4/AMD) | Same as above but `dxgi.dll` instead of `version.dll`, plus `amd_fidelityfx_upscaler_dx12.dll`, `amd_fidelityfx_framegeneration_dx12.dll` |
 | Fantasy Optimizer | `ZZFrancisLouisFOVer2_P.pak` from `End/Content/Paks/~mods/` |
 | Enhanced Fantasy Visuals | `ZFrancisLouis_EFVEpic_P.pak` or `ZFrancisLouis_EFVFogEpic_P.pak` from `End/Content/Paks/~mods/` |
 | AVX2 Emulation | `SDE/` folder and `FFVII-SDE-Launcher.bat` from `End/Binaries/Win64/` |
