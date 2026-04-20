@@ -22,6 +22,13 @@
   - [Step 5 — In-game settings](#step-5--in-game-settings)
   - [Step 6 — Install Fantasy Optimizer](#step-6--install-fantasy-optimizer)
   - [Step 7 — Install Enhanced Fantasy Visuals](#step-7--install-enhanced-fantasy-visuals)
+  - [Linux Troubleshooting — Persistent Stuttering](#linux-troubleshooting--persistent-stuttering)
+    - [1. Install irqbalance and libgamemode](#1-install-irqbalance-and-libgamemode)
+    - [2. Pin GPU interrupts to P-cores](#2-pin-gpu-interrupts-to-p-cores)
+    - [3. Disable Frame Generation on 8 GB VRAM GPUs](#3-disable-frame-generation-on-8-gb-vram-gpus)
+    - [4. Ban E-cores from irqbalance](#4-ban-e-cores-from-irqbalance)
+    - [5. Cap the frame rate](#5-cap-the-frame-rate)
+    - [6. Use Proton 10.0, not Proton Experimental](#6-use-proton-100-not-proton-experimental)
   - [Optional — AVX2 Emulation for old CPUs](#optional--avx2-emulation-for-old-cpus)
   - [Uninstall](#uninstall)
 
@@ -350,15 +357,22 @@ In Steam: right-click the game → **Properties** → **Launch Options**, and pa
 
 **DLSS4 variant (NVIDIA — recommended):**
 ```
-WINEDLLOVERRIDES="xinput1_3=n,b;version.dll=n,b" PROTON_ENABLE_NVAPI=1 __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1 gamemoderun %command% -nodirectstorage
+WINEDLLOVERRIDES="xinput1_3=n,b;version.dll=n,b" PROTON_ENABLE_NVAPI=1 __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1 VKD3D_CONFIG=pipeline_library_app_cache MANGOHUD=1 MANGOHUD_DEVICEINDEX=1 gamemoderun %command% -nodirectstorage
 ```
 
 **FSR4 variant (AMD or other GPU):**
 ```
-WINEDLLOVERRIDES="xinput1_3=n,b;dxgi.dll=n,b" RADV_PERFTEST=nggc gamemoderun %command% -nodirectstorage
+WINEDLLOVERRIDES="xinput1_3=n,b;dxgi.dll=n,b" RADV_PERFTEST=nggc VKD3D_CONFIG=pipeline_library_app_cache MANGOHUD=1 gamemoderun %command% -nodirectstorage
 ```
 
 > If you renamed `xinput1_3.dll` in Step 1 (e.g. to `dxgi.dll`), update the first override entry to match.
+
+| Variable | Purpose |
+|---|---|
+| `VKD3D_CONFIG=pipeline_library_app_cache` | Persists the VKD3D pipeline cache across sessions — reduces shader stutter on subsequent launches |
+| `MANGOHUD=1` | Enables the MangoHud performance overlay (FPS, frametime, GPU/CPU usage) |
+| `MANGOHUD_DEVICEINDEX=1` | Tells MangoHud to read from the discrete GPU on NVIDIA Optimus laptops (Intel+NVIDIA). Without this, MangoHud reports 0% GPU by reading the Intel iGPU instead |
+| `-nodirectstorage` | Disables DirectStorage, which is unstable under Proton |
 
 ---
 
@@ -411,6 +425,85 @@ Enhanced Fantasy Visuals is a `.pak` mod that improves the game's visual quality
 
 > [!NOTE]
 > Only install one variant at a time. If both `.pak` files are present, remove the one you don't want.
+
+---
+
+## Linux Troubleshooting — Persistent Stuttering
+
+If the game stutters despite all mods being installed, work through the following in order.
+
+### 1. Install irqbalance and libgamemode
+
+```bash
+sudo apt install -y irqbalance libgamemode0 gamemode
+sudo systemctl enable --now irqbalance
+```
+
+Without `libgamemode0`, `gamemoderun` in the launch string will cause the game to crash immediately with a black window.
+
+### 2. Pin GPU interrupts to P-cores
+
+On laptops with hybrid CPUs (Intel P-core + E-core), the kernel may route the NVIDIA and Intel GPU interrupts to slow E-cores, causing them to hit 100% `sys` time and stutter the game.
+
+Find the IRQ numbers for your NVIDIA and Intel GPUs:
+
+```bash
+grep -E "nvidia|i915" /proc/interrupts
+```
+
+Then pin them to P-cores (adjust the IRQ numbers to match your system):
+
+```bash
+# Example: IRQ 217 = NVIDIA, IRQ 243 = i915
+echo 0-7 | sudo tee /proc/irq/217/smp_affinity_list
+echo 0-7 | sudo tee /proc/irq/243/smp_affinity_list
+```
+
+> `0-7` covers the 8 P-cores on an Intel Core Ultra 9 275HX. Adjust the range to match your CPU's P-core count (`lscpu` shows the topology).
+
+To make this persistent across reboots, create a udev rule:
+
+```bash
+sudo tee /etc/udev/rules.d/99-irq-gpu.rules << 'EOF'
+ACTION=="add", SUBSYSTEM=="pci", DRIVER=="nvidia", RUN+="/bin/sh -c 'for irq in $(cat /sys/bus/pci/devices/$id/irq 2>/dev/null); do echo 0-7 > /proc/irq/$irq/smp_affinity_list; done'"
+EOF
+```
+
+### 3. Disable Frame Generation on 8 GB VRAM GPUs
+
+With VRAM at 90%+ (common on 8 GB GPUs), Frame Generation requires an additional ~1.5 GB for interpolation buffers, causing constant VRAM eviction and severe stutters.
+
+Frame Generation is already **disabled by default** in the `OptiScaler.ini` shipped with this repo (`[FrameGen] Enabled=false`). Do not enable it if your GPU has 8 GB or less.
+
+### 4. Ban E-cores from irqbalance
+
+`irqbalance` intentionally offloads interrupts to E-cores to keep P-cores free for applications — but for GPU interrupts this is counterproductive. Ban the E-cores:
+
+```bash
+# Find your E-core range first
+lscpu --all -p=cpu,core,cluster | grep -v "^#"
+
+# Ban CPUs 8–23 (adjust to your CPU's E-core range)
+echo 'IRQBALANCE_BANNED_CPUS=FFFF00' | sudo tee /etc/default/irqbalance
+sudo systemctl restart irqbalance
+```
+
+### 5. Cap the frame rate
+
+An uncapped game at 720p with a fast GPU can render 200–400 FPS. Each frame generates a VkQueueSubmit ioctl + Wine sync calls, flooding the GPU interrupt and causing high kernel `sys` time. Cap to your monitor's refresh rate or 120:
+
+In-game: **Settings → Frame Rate → 120**
+
+Or edit `GameUserSettings.ini` directly:
+```
+FrameRateLimit=120.000000
+```
+
+### 6. Use Proton 10.0, not Proton Experimental
+
+Proton Experimental has a known `winevulkan:signaller_worker wait timed out` deadlock with NVIDIA drivers that causes the game to hang at a black window. Use the stable **Proton 10.0** release.
+
+In Steam: right-click FF7 Rebirth → **Properties → Compatibility** → check *Force the use of a specific Steam Play compatibility tool* → select **Proton 10.0**.
 
 ---
 
