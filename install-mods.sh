@@ -30,6 +30,123 @@ remove_file() {
     fi
 }
 
+# ── Helper: write Steam launch options into localconfig.vdf ──────────────────
+# Usage: set_steam_launch_options "<options string>"  (pass "" to clear)
+set_steam_launch_options() {
+    local new_opts="$1"
+
+    # Collect all localconfig.vdf files across known Steam userdata locations.
+    local vdf_paths=()
+    for userdata_dir in "$STEAM_ROOT/userdata" "$HOME/.local/share/Steam/userdata"; do
+        [[ -d "$userdata_dir" ]] || continue
+        while IFS= read -r -d '' f; do
+            vdf_paths+=("$f")
+        done < <(find "$userdata_dir" -name "localconfig.vdf" -print0 2>/dev/null)
+    done
+    # De-duplicate (STEAM_ROOT and ~/.local/share/Steam may be the same path).
+    mapfile -t vdf_paths < <(printf '%s\n' "${vdf_paths[@]}" | sort -u)
+
+    if [[ ${#vdf_paths[@]} -eq 0 ]]; then
+        warn "No localconfig.vdf found — cannot auto-update Steam Launch Options"
+        return 1
+    fi
+
+    if pgrep -x "steam" > /dev/null 2>&1; then
+        warn "Steam is running — you must restart Steam for the Launch Option change to take effect"
+    fi
+
+    local updated=false
+    for vdf_path in "${vdf_paths[@]}"; do
+        [[ -r "$vdf_path" && -w "$vdf_path" ]] || continue
+        grep -q "\"$GAME_APP_ID\"" "$vdf_path" 2>/dev/null || continue
+
+        local result
+        result=$(NEW_LAUNCH_OPTS="$new_opts" GAME_APP_ID="$GAME_APP_ID" python3 - "$vdf_path" <<'PYEOF'
+import sys, os, re, shutil
+
+vdf_path = sys.argv[1]
+new_opts = os.environ['NEW_LAUNCH_OPTS']
+app_id   = os.environ['GAME_APP_ID']
+
+with open(vdf_path, 'r', errors='ignore') as f:
+    lines = f.readlines()
+
+out          = []
+state        = 'outside'   # outside | found_key | in_section
+depth        = 0
+done         = False
+launch_found = False
+inserted     = False
+
+for line in lines:
+    raw = line.rstrip('\n')
+
+    if not done:
+        if state == 'outside':
+            # Match a standalone "APP_ID" key (not an inline key-value pair).
+            if re.match(r'^\t+"' + re.escape(app_id) + r'"\s*$', raw):
+                state = 'found_key'
+                depth = 0
+                launch_found = False
+
+        elif state == 'found_key':
+            if raw.strip() == '{':
+                state = 'in_section'
+                depth = 1
+            elif raw.strip():
+                state = 'outside'  # wasn't a block opener — reset
+
+        elif state == 'in_section':
+            s = raw.strip()
+            if s == '{':
+                depth += 1
+            elif s == '}':
+                depth -= 1
+                if depth == 0:
+                    # Closing brace of the app section.
+                    if not launch_found:
+                        # Insert LaunchOptions before the closing brace.
+                        m = re.match(r'^(\t+)', raw)
+                        ind = (m.group(1) if m else '\t\t\t\t\t') + '\t'
+                        out.append(ind + '"LaunchOptions"\t\t"' + new_opts + '"\n')
+                        inserted = True
+                    state = 'outside'
+                    done = True
+            elif depth == 1:
+                # Top-level key inside the app section — replace LaunchOptions if found.
+                m = re.match(r'^(\t+)"LaunchOptions"(\t+)"((?:[^"\\]|\\.)*)"', raw)
+                if m:
+                    out.append(m.group(1) + '"LaunchOptions"' + m.group(2) + '"' + new_opts + '"\n')
+                    launch_found = True
+                    done = True
+                    continue
+
+    out.append(line)
+
+if launch_found or inserted:
+    shutil.copy2(vdf_path, vdf_path + '.bak')
+    with open(vdf_path, 'w') as f:
+        f.writelines(out)
+    print('updated')
+else:
+    print('not_found')
+PYEOF
+        )
+
+        if [[ "$result" == "updated" ]]; then
+            success "Steam Launch Options written to: $vdf_path"
+            updated=true
+            break
+        fi
+    done
+
+    if [[ "$updated" == "false" ]]; then
+        warn "Could not auto-update Steam Launch Options (VDF not found or game not in library)"
+        return 1
+    fi
+    return 0
+}
+
 # ── Defaults ──────────────────────────────────────────────────────────────────
 GPU="nvidia"           # nvidia | amd
 INSTALL_OPTISCALER=true
@@ -371,7 +488,8 @@ if m: print(m.group(1).replace('\\\\\"', '\"'))
                 warn "  → Without this, DLSS silently fails and the game falls back"
                 warn "    to unoptimised rendering — this is the most common stutter cause on Linux"
                 warn "  → Fix: update your Steam Launch Options to:"
-                warn "    WINEDLLOVERRIDES=\"xinput1_3=n,b;version.dll=n,b\" PROTON_ENABLE_NVAPI=1 __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1 gamemoderun %command% -nodirectstorage"
+                warn "    WINEDLLOVERRIDES=\"xinput1_3=n,b;version.dll=n,b\" PROTON_ENABLE_NVAPI=1 __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1 VKD3D_CONFIG=pipeline_library_app_cache gamemoderun %command% -nodirectstorage"
+                warn "  → Or re-run: ./install-mods.sh  (it will apply them automatically)"
             fi
             if echo "$LAUNCH_OPTS_FOUND" | grep -q "gamemoderun"; then
                 success "gamemoderun is present in Steam Launch Options"
@@ -517,9 +635,14 @@ if [[ "$UNINSTALL" == "true" ]]; then
     echo -e "${BOLD}${GREEN}║   Uninstall complete!                        ║${NC}"
     echo -e "${BOLD}${GREEN}╚══════════════════════════════════════════════╝${NC}"
     echo
-    echo -e "${BOLD}${YELLOW}Manual step remaining:${NC}"
-    echo "  Remove the WINEDLLOVERRIDES launch options from Steam:"
-    echo "  Steam → right-click game → Properties → Launch Options → clear the field"
+
+    step "Clearing Steam Launch Options"
+    if set_steam_launch_options ""; then
+        success "Steam Launch Options cleared"
+    else
+        warn "Could not clear automatically — remove the Launch Options manually:"
+        warn "  Steam → right-click game → Properties → Launch Options → clear the field"
+    fi
     echo
     exit 0
 fi
@@ -643,26 +766,32 @@ else
     skip "Enhanced Fantasy Visuals (--no-enhanced-visuals)"
 fi
 
-# ── Step 6: Print Steam launch options ───────────────────────────────────────
+# ── Step 6: Steam launch options ─────────────────────────────────────────────
 step "Step 6 — Steam Launch Options"
 
 DLL_OVERRIDES="xinput1_3=n,b"
 [[ -n "$OPTISCALER_DLL_OVERRIDE" ]] && DLL_OVERRIDES="${DLL_OVERRIDES};${OPTISCALER_DLL_OVERRIDE}"
 
 if [[ "$GPU" == "nvidia" ]]; then
-    ENV_VAR="PROTON_ENABLE_NVAPI=1 __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1"
+    ENV_VAR="PROTON_ENABLE_NVAPI=1 __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1 VKD3D_CONFIG=pipeline_library_app_cache"
 else
-    ENV_VAR="RADV_PERFTEST=nggc"
+    ENV_VAR="RADV_PERFTEST=nggc __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1 VKD3D_CONFIG=pipeline_library_app_cache"
 fi
 
 LAUNCH_OPTIONS="WINEDLLOVERRIDES=\"${DLL_OVERRIDES}\" ${ENV_VAR} gamemoderun %command% -nodirectstorage"
 
 echo
-echo -e "${YELLOW}Set the following in Steam → right-click game → Properties → Launch Options:${NC}"
+echo -e "${CYAN}Launch Options:${NC}  ${BOLD}${LAUNCH_OPTIONS}${NC}"
 echo
-echo -e "  ${BOLD}${LAUNCH_OPTIONS}${NC}"
-echo
-echo -e "${YELLOW}(Steam launch options cannot be set automatically from a script.)${NC}"
+
+if set_steam_launch_options "$LAUNCH_OPTIONS"; then
+    success "Launch Options applied automatically"
+else
+    warn "Set the following manually in Steam → right-click game → Properties → Launch Options:"
+    echo
+    echo -e "  ${BOLD}${LAUNCH_OPTIONS}${NC}"
+    echo
+fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo
@@ -671,12 +800,10 @@ echo -e "${BOLD}${GREEN}║   Installation complete!                     ║${NC
 echo -e "${BOLD}${GREEN}╚══════════════════════════════════════════════╝${NC}"
 echo
 echo -e "${BOLD}Next steps:${NC}"
-echo "  1. Copy the Launch Options above into Steam"
-echo "  2. Launch the game"
-echo "  3. Graphics → Anti-Aliasing Method → DLSS"
-echo "  4. Graphics → Background Model Detail → Ultra"
+echo "  1. Launch the game"
+echo "  2. Graphics → Anti-Aliasing Method → DLSS"
+echo "  3. Graphics → Background Model Detail → Ultra"
 if [[ "$INSTALL_OPTISCALER" == "true" ]]; then
-    echo "  5. Optional: Press Insert in-game to enable Frame Generation"
-    echo "     (note: currently causes HUD glitching)"
+    echo "  4. Optional: Press End in-game to open the OptiScaler overlay"
 fi
 echo
