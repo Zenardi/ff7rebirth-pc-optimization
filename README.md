@@ -17,6 +17,8 @@
     - [Fix CPU governor on laptops](#fix-cpu-governor-on-laptops)
     - [Set the options in Steam](#set-the-options-in-steam)
   - [Step 5 — In-game settings](#step-5--in-game-settings)
+  - [Step 6 — Install Fantasy Optimizer](#step-6--install-fantasy-optimizer)
+  - [Step 7 — Install Enhanced Fantasy Visuals](#step-7--install-enhanced-fantasy-visuals)
   - [Optional — AVX2 Emulation for old CPUs](#optional--avx2-emulation-for-old-cpus)
   - [Uninstall](#uninstall)
 
@@ -43,6 +45,9 @@ Then paste the printed Launch Options into Steam → right-click game → **Prop
 | `--gpu amd` | Use FSR4 (AMD / other GPU) | |
 | `--no-vrr` | Use No-VRR Engine.ini variant | VRR enabled |
 | `--no-optiscaler` | Skip OptiScaler / upscaler install | OptiScaler installed |
+| `--no-fantasy-optimizer` | Skip Fantasy Optimizer (.pak) | Installed |
+| `--no-enhanced-visuals` | Skip Enhanced Fantasy Visuals (.pak) | Installed |
+| `--efv-fog` | Use the Fog Enabled variant of Enhanced Fantasy Visuals | No fog |
 | `--verify` | Check all mods are correctly applied | |
 | `--uninstall` | Remove all mod files | |
 
@@ -64,6 +69,13 @@ Then paste the printed Launch Options into Steam → right-click game → **Prop
 # Only FFVIIHook + Engine tweaks, skip OptiScaler
 ./install-mods.sh --no-optiscaler
 
+# Skip Fantasy Optimizer or Enhanced Fantasy Visuals
+./install-mods.sh --no-fantasy-optimizer
+./install-mods.sh --no-enhanced-visuals
+
+# Use Fog Enabled variant of Enhanced Fantasy Visuals
+./install-mods.sh --efv-fog
+
 # Verify all mods are correctly installed (run this if you experience stuttering)
 ./install-mods.sh --verify
 
@@ -78,7 +90,9 @@ Then paste the printed Launch Options into Steam → right-click game → **Prop
 3. **Installs FFVIIHook** — copies `xinput1_3.dll` to the game binaries folder
 4. **Installs Engine.ini** — copies the VRR or No-VRR variant and sets it read-only
 5. **Installs OptiScaler** — extracts the DLSS4 (NVIDIA) or FSR4 (AMD) zip into the game binaries folder
-6. **Prints the Steam Launch Options** to set manually (Steam does not allow scripts to set this)
+6. **Installs Fantasy Optimizer** — copies the `.pak` file into `End/Content/Paks/~mods/`
+7. **Installs Enhanced Fantasy Visuals** — copies the standard or fog-enabled `.pak` into `End/Content/Paks/~mods/`
+8. **Prints the Steam Launch Options** to set manually (Steam does not allow scripts to set this)
 
 > [!NOTE]
 > After the script finishes, you must still manually paste the Launch Options into Steam and set **Anti-Aliasing Method → DLSS** in-game (Step 5).
@@ -237,6 +251,48 @@ WINEDLLOVERRIDES="xinput1_3=n,b;dxgi.dll=n,b" RADV_PERFTEST=nggc gamemoderun %co
 
 ---
 
+## Step 6 — Install Fantasy Optimizer
+
+[NexusMods page](https://www.nexusmods.com/finalfantasy7rebirth/mods/1)
+
+Fantasy Optimizer is a `.pak` mod that adjusts in-game parameters to improve performance and reduce visual overhead.
+
+**Install:**
+
+1. Create the mods folder if it doesn't exist:
+   ```bash
+   mkdir -p "/path/to/SteamLibrary/steamapps/common/FINAL FANTASY VII REBIRTH/End/Content/Paks/~mods"
+   ```
+2. Copy `ZZFrancisLouisFOVer2_P.pak` from `Final Optimizer (Ver2)-*/` into that `~mods/` folder.
+
+---
+
+## Step 7 — Install Enhanced Fantasy Visuals
+
+[NexusMods page](https://www.nexusmods.com/finalfantasy7rebirth/mods/2)
+
+Enhanced Fantasy Visuals is a `.pak` mod that improves the game's visual quality — better lighting, colours, and atmosphere.
+
+**Choose your variant first:**
+
+| Variant | File | When to use |
+|---|---|---|
+| Standard | `ZFrancisLouis_EFVEpic_P.pak` | Default — recommended |
+| Fog Enabled | `ZFrancisLouis_EFVFogEpic_P.pak` | If you want volumetric fog restored |
+
+**Install:**
+
+1. Create the mods folder if it doesn't exist:
+   ```bash
+   mkdir -p "/path/to/SteamLibrary/steamapps/common/FINAL FANTASY VII REBIRTH/End/Content/Paks/~mods"
+   ```
+2. Copy **one** of the `.pak` files from `Enhanced-Fantasy-Visuals/` (your chosen variant) into the `~mods/` folder.
+
+> [!NOTE]
+> Only install one variant at a time. If both `.pak` files are present, remove the one you don't want.
+
+---
+
 ## Optional — AVX2 Emulation for old CPUs
 
 > Only needed if your CPU does **not** support AVX2 (typically pre-2013 Intel CPUs). Skip this if you have a modern CPU.
@@ -267,6 +323,8 @@ The game refuses to launch without AVX2. This mod uses Intel SDE to emulate the 
 | Ultimate Engine Tweaks | `Engine.ini` from the `WindowsNoEditor/` config folder |
 | OptiScaler (DLSS) | `amd_fidelityfx_dx12.dll`, `version.dll`, `nvngx_dlss_updated.dll`, `OptiScaler.ini` from `End/Binaries/Win64/` |
 | OptiScaler (FSR3/XeSS) | `amd_fidelityfx_dx12.dll`, `dxgi.dll`, `nvngx.dll`, `OptiScaler.ini` from `End/Binaries/Win64/` |
+| Fantasy Optimizer | `ZZFrancisLouisFOVer2_P.pak` from `End/Content/Paks/~mods/` |
+| Enhanced Fantasy Visuals | `ZFrancisLouis_EFVEpic_P.pak` or `ZFrancisLouis_EFVFogEpic_P.pak` from `End/Content/Paks/~mods/` |
 | AVX2 Emulation | `SDE/` folder and `FFVII-SDE-Launcher.bat` from `End/Binaries/Win64/` |
 
 Also remove the `WINEDLLOVERRIDES` line from your Steam Launch Options.

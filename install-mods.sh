@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # FF7 Rebirth — Mod Installer / Uninstaller / Verifier for Linux
-# Manages: FFVIIHook, Ultimate Engine Tweaks, OptiScaler (DLSS4/FSR4)
+# Manages: FFVIIHook, Ultimate Engine Tweaks, OptiScaler (DLSS4/FSR4),
+#          Fantasy Optimizer, Enhanced Fantasy Visuals
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,6 +34,9 @@ remove_file() {
 GPU="nvidia"           # nvidia | amd
 INSTALL_OPTISCALER=true
 USE_VRR=true
+INSTALL_FANTASY_OPTIMIZER=true
+INSTALL_ENHANCED_VISUALS=true
+EFV_FOG=false
 UNINSTALL=false
 VERIFY=false
 VERIFY_FAILED=false
@@ -43,27 +47,35 @@ usage() {
 Usage: $(basename "$0") [OPTIONS]
 
 Installs, uninstalls, or verifies FF7 Rebirth performance mods on Linux.
-Mods managed: FFVIIHook, Ultimate Engine Tweaks, OptiScaler (DLSS4/FSR4).
+Mods managed: FFVIIHook, Ultimate Engine Tweaks, OptiScaler (DLSS4/FSR4),
+              Fantasy Optimizer, Enhanced Fantasy Visuals.
 
 Install options:
-  --gpu nvidia|amd     Graphics card type            (default: nvidia)
-  --no-optiscaler      Skip OptiScaler / upscaler installation
-  --no-vrr             Use the No-VRR Engine.ini variant
-                       (default: VRR / G-Sync / FreeSync enabled)
+  --gpu nvidia|amd          Graphics card type            (default: nvidia)
+  --no-optiscaler           Skip OptiScaler / upscaler installation
+  --no-vrr                  Use the No-VRR Engine.ini variant
+                            (default: VRR / G-Sync / FreeSync enabled)
+  --no-fantasy-optimizer    Skip Fantasy Optimizer (.pak) installation
+  --no-enhanced-visuals     Skip Enhanced Fantasy Visuals (.pak) installation
+  --efv-fog                 Use the Fog Enabled variant of Enhanced Fantasy Visuals
+                            (default: standard variant)
 
 Other options:
-  --uninstall          Remove all installed mod files
-  --verify             Check that all mods are correctly installed
-  -h, --help           Show this help
+  --uninstall               Remove all installed mod files
+  --verify                  Check that all mods are correctly installed
+  -h, --help                Show this help
 
 Examples:
-  $(basename "$0")                     # Install: NVIDIA + DLSS4 + VRR  ← recommended
-  $(basename "$0") --gpu amd           # Install: AMD + FSR4 + VRR
-  $(basename "$0") --no-vrr            # Install: NVIDIA + DLSS4, no VRR
-  $(basename "$0") --gpu amd --no-vrr  # Install: AMD + FSR4, no VRR
-  $(basename "$0") --no-optiscaler     # Install: FFVIIHook + Engine tweaks only
-  $(basename "$0") --uninstall         # Remove all mod files
-  $(basename "$0") --verify            # Verify all mods are correctly applied
+  $(basename "$0")                             # Install all mods: NVIDIA + DLSS4 + VRR  ← recommended
+  $(basename "$0") --gpu amd                   # Install: AMD + FSR4 + VRR
+  $(basename "$0") --no-vrr                    # Install: NVIDIA + DLSS4, no VRR
+  $(basename "$0") --gpu amd --no-vrr          # Install: AMD + FSR4, no VRR
+  $(basename "$0") --no-optiscaler             # Install: FFVIIHook + Engine tweaks only
+  $(basename "$0") --no-fantasy-optimizer      # Skip Fantasy Optimizer
+  $(basename "$0") --no-enhanced-visuals       # Skip Enhanced Fantasy Visuals
+  $(basename "$0") --efv-fog                   # Use Fog Enabled variant
+  $(basename "$0") --uninstall                 # Remove all mod files
+  $(basename "$0") --verify                    # Verify all mods are correctly applied
 EOF
 }
 
@@ -76,11 +88,14 @@ while [[ $# -gt 0 ]]; do
             [[ "$GPU" == "nvidia" || "$GPU" == "amd" ]] \
                 || die "Invalid --gpu value '$GPU'. Must be 'nvidia' or 'amd'."
             ;;
-        --no-optiscaler) INSTALL_OPTISCALER=false; shift ;;
-        --no-vrr)        USE_VRR=false;            shift ;;
-        --uninstall)     UNINSTALL=true;           shift ;;
-        --verify)        VERIFY=true;              shift ;;
-        -h|--help)       usage; exit 0 ;;
+        --no-optiscaler)          INSTALL_OPTISCALER=false;        shift ;;
+        --no-vrr)                 USE_VRR=false;                   shift ;;
+        --no-fantasy-optimizer)   INSTALL_FANTASY_OPTIMIZER=false; shift ;;
+        --no-enhanced-visuals)    INSTALL_ENHANCED_VISUALS=false;  shift ;;
+        --efv-fog)                EFV_FOG=true;                    shift ;;
+        --uninstall)              UNINSTALL=true;                  shift ;;
+        --verify)                 VERIFY=true;                     shift ;;
+        -h|--help)                usage; exit 0 ;;
         *) die "Unknown option: $1  (use --help for usage)" ;;
     esac
 done
@@ -96,17 +111,23 @@ elif [[ "$VERIFY" == "true" ]]; then
     echo -e "${BOLD}${YELLOW}║   FF7 Rebirth — Mod Verifier (Linux)         ║${NC}"
     echo -e "${BOLD}${YELLOW}╚══════════════════════════════════════════════╝${NC}"
     echo
-    info "GPU profile : $GPU"
-    info "OptiScaler  : $INSTALL_OPTISCALER"
-    info "VRR mode    : $USE_VRR"
+    info "GPU profile      : $GPU"
+    info "OptiScaler       : $INSTALL_OPTISCALER"
+    info "VRR mode         : $USE_VRR"
+    info "Fantasy Optimizer: $INSTALL_FANTASY_OPTIMIZER"
+    EFV_VARIANT="$( [[ "$EFV_FOG" == "true" ]] && echo "fog" || echo "standard" )"
+    info "Enhanced Visuals : $INSTALL_ENHANCED_VISUALS ($EFV_VARIANT)"
 else
     echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════╗${NC}"
     echo -e "${BOLD}${CYAN}║   FF7 Rebirth — Mod Installer (Linux)        ║${NC}"
     echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════╝${NC}"
     echo
-    info "GPU profile : $GPU"
-    info "OptiScaler  : $INSTALL_OPTISCALER"
-    info "VRR mode    : $USE_VRR"
+    info "GPU profile      : $GPU"
+    info "OptiScaler       : $INSTALL_OPTISCALER"
+    info "VRR mode         : $USE_VRR"
+    info "Fantasy Optimizer: $INSTALL_FANTASY_OPTIMIZER"
+    EFV_VARIANT="$( [[ "$EFV_FOG" == "true" ]] && echo "fog" || echo "standard" )"
+    info "Enhanced Visuals : $INSTALL_ENHANCED_VISUALS ($EFV_VARIANT)"
 fi
 
 # ── Helper: collect Steam library paths ──────────────────────────────────────
@@ -162,6 +183,7 @@ done
 success "Game dir     : $GAME_DIR"
 
 BINARIES_DIR="$GAME_DIR/End/Binaries/Win64"
+PAKS_MOD_DIR="$GAME_DIR/End/Content/Paks/~mods"
 
 # Locate the Wine prefix config dir
 CONFIG_DIR=""
@@ -377,6 +399,31 @@ if m: print(m.group(1).replace('\\\\\"', '\"'))
         info "CPU governor '$GOVERNOR' — for best performance, 'performance' is recommended"
     fi
 
+    # ── Check 7: Fantasy Optimizer ────────────────────────────────────────────
+    step "Check 7 — Fantasy Optimizer"
+
+    FO_PAK="$PAKS_MOD_DIR/ZZFrancisLouisFOVer2_P.pak"
+    if [[ -f "$FO_PAK" ]]; then
+        success "Fantasy Optimizer .pak present: $FO_PAK"
+    else
+        fail "Fantasy Optimizer .pak NOT found: $FO_PAK"
+        warn "  → Fix: run  ./install-mods.sh  (or check Step 6 in README)"
+    fi
+
+    # ── Check 8: Enhanced Fantasy Visuals ─────────────────────────────────────
+    step "Check 8 — Enhanced Fantasy Visuals"
+
+    EFV_PAK_STD="$PAKS_MOD_DIR/ZFrancisLouis_EFVEpic_P.pak"
+    EFV_PAK_FOG="$PAKS_MOD_DIR/ZFrancisLouis_EFVFogEpic_P.pak"
+    if [[ -f "$EFV_PAK_STD" ]]; then
+        success "Enhanced Fantasy Visuals (standard) .pak present: $EFV_PAK_STD"
+    elif [[ -f "$EFV_PAK_FOG" ]]; then
+        success "Enhanced Fantasy Visuals (fog) .pak present: $EFV_PAK_FOG"
+    else
+        fail "Enhanced Fantasy Visuals .pak NOT found in $PAKS_MOD_DIR/"
+        warn "  → Fix: run  ./install-mods.sh  (or check Step 7 in README)"
+    fi
+
     # ── Summary ───────────────────────────────────────────────────────────────
     echo
     if [[ "$VERIFY_FAILED" == "true" ]]; then
@@ -439,6 +486,13 @@ if [[ "$UNINSTALL" == "true" ]]; then
     for f in "${OPTISCALER_FILES[@]}"; do
         remove_file "$BINARIES_DIR/$f"
     done
+
+    step "Removing Fantasy Optimizer"
+    remove_file "$PAKS_MOD_DIR/ZZFrancisLouisFOVer2_P.pak"
+
+    step "Removing Enhanced Fantasy Visuals"
+    remove_file "$PAKS_MOD_DIR/ZFrancisLouis_EFVEpic_P.pak"
+    remove_file "$PAKS_MOD_DIR/ZFrancisLouis_EFVFogEpic_P.pak"
 
     echo
     echo -e "${BOLD}${GREEN}╔══════════════════════════════════════════════╗${NC}"
@@ -519,8 +573,47 @@ if [[ "$INSTALL_OPTISCALER" == "true" ]]; then
     fi
 fi
 
-# ── Step 4: Print Steam launch options ───────────────────────────────────────
-step "Step 4 — Steam Launch Options"
+# ── Step 4: Fantasy Optimizer ────────────────────────────────────────────────
+if [[ "$INSTALL_FANTASY_OPTIMIZER" == "true" ]]; then
+    step "Step 4 — Fantasy Optimizer"
+
+    FO_SRC=$(find "$SCRIPT_DIR/Final Optimizer"* -name "*.pak" 2>/dev/null | head -1)
+    [[ -n "$FO_SRC" ]] \
+        || die "Fantasy Optimizer .pak not found. Make sure the 'Final Optimizer (Ver2)-*' folder is present."
+
+    mkdir -p "$PAKS_MOD_DIR"
+    cp "$FO_SRC" "$PAKS_MOD_DIR/$(basename "$FO_SRC")"
+    success "Copied $(basename "$FO_SRC")  →  $PAKS_MOD_DIR/"
+else
+    skip "Fantasy Optimizer (--no-fantasy-optimizer)"
+fi
+
+# ── Step 5: Enhanced Fantasy Visuals ─────────────────────────────────────────
+if [[ "$INSTALL_ENHANCED_VISUALS" == "true" ]]; then
+    if [[ "$EFV_FOG" == "true" ]]; then
+        step "Step 5 — Enhanced Fantasy Visuals (Fog Enabled)"
+        EFV_SRC=$(find "$SCRIPT_DIR/Enhanced-Fantasy-Visuals" -name "*Fog*" -name "*.pak" 2>/dev/null | head -1)
+        [[ -n "$EFV_SRC" ]] \
+            || die "Enhanced Fantasy Visuals (Fog) .pak not found inside 'Enhanced-Fantasy-Visuals/'."
+    else
+        step "Step 5 — Enhanced Fantasy Visuals (Standard)"
+        EFV_SRC=$(find "$SCRIPT_DIR/Enhanced-Fantasy-Visuals" -name "*.pak" ! -name "*Fog*" 2>/dev/null | head -1)
+        [[ -n "$EFV_SRC" ]] \
+            || die "Enhanced Fantasy Visuals .pak not found inside 'Enhanced-Fantasy-Visuals/'."
+    fi
+
+    mkdir -p "$PAKS_MOD_DIR"
+    # Remove the other variant to avoid conflicts
+    rm -f "$PAKS_MOD_DIR/ZFrancisLouis_EFVEpic_P.pak" \
+          "$PAKS_MOD_DIR/ZFrancisLouis_EFVFogEpic_P.pak"
+    cp "$EFV_SRC" "$PAKS_MOD_DIR/$(basename "$EFV_SRC")"
+    success "Copied $(basename "$EFV_SRC")  →  $PAKS_MOD_DIR/"
+else
+    skip "Enhanced Fantasy Visuals (--no-enhanced-visuals)"
+fi
+
+# ── Step 6: Print Steam launch options ───────────────────────────────────────
+step "Step 6 — Steam Launch Options"
 
 DLL_OVERRIDES="xinput1_3=n,b"
 [[ -n "$OPTISCALER_DLL_OVERRIDE" ]] && DLL_OVERRIDES="${DLL_OVERRIDES};${OPTISCALER_DLL_OVERRIDE}"
